@@ -79,6 +79,17 @@ mod imp {
                     }
                 });
             }
+
+            // Subscription auto-update ticker (one per app lifetime).
+            static AUTO_UPDATE_STARTED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !AUTO_UPDATE_STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                start_auto_update_ticker(state.clone());
+                let _ = crate::tray::install(state.clone());
+                // Prevent the app from exiting when the window closes so the tray keeps running.
+                let guard = self.obj().hold();
+                std::mem::forget(guard);
+            }
         }
     }
 
@@ -126,6 +137,67 @@ pub fn apply_theme(mode: ThemeMode) {
         ThemeMode::Dark => adw::ColorScheme::ForceDark,
     };
     mgr.set_color_scheme(scheme);
+}
+
+fn start_auto_update_ticker(state: Arc<AppState>) {
+    glib::timeout_add_seconds_local(60, move || {
+        let now = chrono::Utc::now();
+        let (due, ua): (Vec<crate::config::Subscription>, String) = {
+            let cfg = state.cfg.read().unwrap();
+            let subs = cfg.subscriptions.iter()
+                .filter(|s| s.auto_update)
+                .filter(|s| !s.url.starts_with("file://"))
+                .filter(|s| {
+                    let last = s.updated_at;
+                    let interval_min = s.auto_update_unit.to_minutes(s.auto_update_value.max(1)) as i64;
+                    match last {
+                        None => true,
+                        Some(t) => (now - t).num_minutes() >= interval_min,
+                    }
+                })
+                .cloned()
+                .collect();
+            (subs, cfg.subscription_user_agent.clone())
+        };
+        for sub in due {
+            let proxy_url = if sub.use_proxy_for_update {
+                let cfg = state.cfg.read().unwrap();
+                Some(format!("http://{}:{}", cfg.api_host, cfg.mixed_port))
+            } else { None };
+            let state = state.clone();
+            let sub_id = sub.id.clone();
+            let ua = ua.clone();
+            crate::util::spawn(async move {
+                let out = crate::subscription::fetch_with_proxy(&sub, &ua, proxy_url.as_deref()).await;
+                (sub_id, out)
+            }, move |(sub_id, out)| {
+                match out {
+                    Ok(o) => {
+                        let is_active;
+                        {
+                            let mut g = state.cfg.write().unwrap();
+                            if let Some(s) = g.subscriptions.iter_mut().find(|s| s.id == sub_id) {
+                                s.upload = o.upload;
+                                s.download = o.download;
+                                s.total = o.total;
+                                s.expire = o.expire;
+                                s.updated_at = Some(chrono::Utc::now());
+                            }
+                            is_active = g.active_subscription.as_deref() == Some(&sub_id);
+                        }
+                        let _ = crate::config::persist(&state.cfg);
+                        if is_active {
+                            let core = state.core.clone();
+                            crate::util::detach(async move { let _ = core.apply_config().await; });
+                        }
+                        log::info!("Auto-updated subscription {sub_id}");
+                    }
+                    Err(e) => log::warn!("Auto-update {sub_id} failed: {e}"),
+                }
+            });
+        }
+        glib::ControlFlow::Continue
+    });
 }
 
 fn setup_actions(app: &ClashGnomeApp, state: &Arc<AppState>) {

@@ -63,3 +63,30 @@ pub fn format_bytes(n: u64) -> String {
 pub fn format_speed(n: u64) -> String {
     format!("{}/s", format_bytes(n))
 }
+
+/// Best-effort read of GNOME's system proxy mode via `gsettings`.
+/// Returns "None"/"Manual"/"Auto"/"Unknown".
+pub fn system_proxy_summary() -> String {
+    let out = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.system.proxy", "mode"])
+        .output();
+    let raw = match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        _ => return "Unknown".to_string(),
+    };
+    let cleaned = raw.trim_matches('\'').to_lowercase();
+    match cleaned.as_str() {
+        "none" => "Off".to_string(),
+        "manual" => "Manual".to_string(),
+        "auto" => "Auto (PAC)".to_string(),
+        other => title(other),
+    }
+}
+
+fn title(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
+}

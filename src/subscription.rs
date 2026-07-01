@@ -12,7 +12,17 @@ pub struct FetchOutcome {
     pub yaml_path: std::path::PathBuf,
 }
 
-pub async fn fetch(sub: &Subscription) -> Result<FetchOutcome> {
+pub async fn fetch(sub: &Subscription, user_agent: &str) -> Result<FetchOutcome> {
+    fetch_with_proxy(sub, user_agent, None).await
+}
+
+/// If `proxy_url` is `Some("http://127.0.0.1:7890")`, the request goes through it (via mihomo).
+/// If `None`, uses direct/no-proxy explicitly.
+pub async fn fetch_with_proxy(
+    sub: &Subscription,
+    user_agent: &str,
+    proxy_url: Option<&str>,
+) -> Result<FetchOutcome> {
     config::ensure_dirs()?;
 
     // Handle local file subscriptions (imported via file://) by re-reading the source path.
@@ -35,10 +45,24 @@ pub async fn fetch(sub: &Subscription) -> Result<FetchOutcome> {
         });
     }
 
-    let client = reqwest::Client::builder()
+    let ua = if user_agent.trim().is_empty() {
+        config::default_user_agent()
+    } else {
+        user_agent.to_string()
+    };
+    let mut builder = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
-        .user_agent("clash-verge/1.7.0")
-        .build()?;
+        .user_agent(ua);
+    match proxy_url {
+        Some(p) if !p.is_empty() => {
+            let proxy = reqwest::Proxy::all(p).context("invalid proxy URL")?;
+            builder = builder.proxy(proxy);
+        }
+        _ => {
+            builder = builder.no_proxy();
+        }
+    }
+    let client = builder.build()?;
     let resp = client.get(&sub.url).send().await.context("HTTP GET subscription")?;
     let resp = resp.error_for_status()?;
 

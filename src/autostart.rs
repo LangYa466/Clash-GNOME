@@ -8,7 +8,7 @@ fn autostart_dir() -> PathBuf {
 }
 
 fn autostart_file() -> PathBuf {
-    autostart_dir().join("io.github.langya.ClashGNOME.desktop")
+    autostart_dir().join("io.langya.ClashGNOME.desktop")
 }
 
 fn current_exe() -> String {
@@ -31,7 +31,7 @@ Type=Application\n\
 Name=Clash GNOME\n\
 Comment=Modern GNOME frontend for mihomo\n\
 Exec={exe} --hidden\n\
-Icon=io.github.langya.ClashGNOME\n\
+Icon=io.langya.ClashGNOME\n\
 Terminal=false\n\
 Categories=Network;\n\
 X-GNOME-Autostart-enabled=true\n\

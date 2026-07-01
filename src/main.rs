@@ -6,6 +6,7 @@ mod core_manager;
 mod mihomo_config;
 mod pages;
 mod subscription;
+mod tray;
 mod util;
 mod window;
 

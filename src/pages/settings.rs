@@ -183,6 +183,26 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
     }
     ports.add(&secret_row);
 
+    let ipv6_row = adw::SwitchRow::new();
+    ipv6_row.set_title("Enable IPv6");
+    ipv6_row.set_subtitle("Route IPv6 traffic through the proxy");
+    ipv6_row.set_active(state.cfg.read().unwrap().ipv6);
+    {
+        let state = state.clone();
+        ipv6_row.connect_active_notify(move |row| {
+            state.cfg.write().unwrap().ipv6 = row.is_active();
+            let _ = crate::config::persist(&state.cfg);
+            let core = state.core.clone();
+            let v = row.is_active();
+            util::detach(async move {
+                let _ = core.apply_config().await;
+                let api = core.api();
+                let _ = api.patch_configs(serde_json::json!({ "ipv6": v })).await;
+            });
+        });
+    }
+    ports.add(&ipv6_row);
+
     let lan_row = adw::SwitchRow::new();
     lan_row.set_title("Allow LAN");
     lan_row.set_subtitle("Accept connections from other devices on the network");
@@ -359,7 +379,67 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
         });
     }
     logs.add(&level_row);
+
+    let size_row = adw::SpinRow::with_range(1.0, 4096.0, 1.0);
+    size_row.set_title("Log file max size (MB)");
+    size_row.set_value(state.cfg.read().unwrap().log_max_size_mb as f64);
+    {
+        let state = state.clone();
+        size_row.connect_value_notify(move |r| {
+            state.cfg.write().unwrap().log_max_size_mb = r.value() as u32;
+            let _ = crate::config::persist(&state.cfg);
+            let core = state.core.clone();
+            util::detach(async move { let _ = core.apply_config().await; });
+        });
+    }
+    logs.add(&size_row);
+
+    let days_row = adw::SpinRow::with_range(1.0, 365.0, 1.0);
+    days_row.set_title("Log retention (days)");
+    days_row.set_value(state.cfg.read().unwrap().log_max_days as f64);
+    {
+        let state = state.clone();
+        days_row.connect_value_notify(move |r| {
+            state.cfg.write().unwrap().log_max_days = r.value() as u32;
+            let _ = crate::config::persist(&state.cfg);
+            let core = state.core.clone();
+            util::detach(async move { let _ = core.apply_config().await; });
+        });
+    }
+    logs.add(&days_row);
     page.add(&logs);
+
+    // === Subscription ===
+    let sub_g = adw::PreferencesGroup::new();
+    sub_g.set_title("Subscription");
+
+    let ua_row = adw::EntryRow::new();
+    ua_row.set_title("User-Agent");
+    ua_row.set_text(&state.cfg.read().unwrap().subscription_user_agent);
+    let ua_reset = gtk::Button::from_icon_name("edit-undo-symbolic");
+    ua_reset.add_css_class("flat");
+    ua_reset.set_valign(gtk::Align::Center);
+    ua_reset.set_tooltip_text(Some("Reset to default"));
+    ua_row.add_suffix(&ua_reset);
+    {
+        let state = state.clone();
+        ua_row.connect_changed(move |row| {
+            state.cfg.write().unwrap().subscription_user_agent = row.text().to_string();
+            let _ = crate::config::persist(&state.cfg);
+        });
+    }
+    {
+        let state = state.clone();
+        let ua_row = ua_row.clone();
+        ua_reset.connect_clicked(move |_| {
+            let d = crate::config::default_user_agent();
+            ua_row.set_text(&d);
+            state.cfg.write().unwrap().subscription_user_agent = d;
+            let _ = crate::config::persist(&state.cfg);
+        });
+    }
+    sub_g.add(&ua_row);
+    page.add(&sub_g);
 
     // === Danger zone ===
     let danger = adw::PreferencesGroup::new();

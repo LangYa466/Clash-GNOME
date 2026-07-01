@@ -52,8 +52,9 @@ fn apply_overrides(m: &mut Mapping, cfg: &AppConfig) {
     } else {
         m.remove(Value::String("secret".into()));
     }
-    // IPv6 on by default for modern setups
-    set(m, "ipv6", true);
+    set(m, "ipv6", cfg.ipv6);
+    set(m, "log-file-max-size", cfg.log_max_size_mb);
+    set(m, "log-file-max-age", cfg.log_max_days);
     // Enable unified-delay for stable delay readings
     set(m, "unified-delay", true);
     // TCP concurrent

@@ -57,8 +57,8 @@ Binary at `target/release/clash-gnome`.
 
 ```bash
 sudo install -Dm755 target/release/clash-gnome /usr/local/bin/clash-gnome
-sudo install -Dm644 data/io.github.langya.ClashGNOME.desktop /usr/share/applications/io.github.langya.ClashGNOME.desktop
-sudo install -Dm644 data/io.github.langya.ClashGNOME.metainfo.xml /usr/share/metainfo/io.github.langya.ClashGNOME.metainfo.xml
+sudo install -Dm644 data/io.langya.ClashGNOME.desktop /usr/share/applications/io.langya.ClashGNOME.desktop
+sudo install -Dm644 data/io.langya.ClashGNOME.metainfo.xml /usr/share/metainfo/io.langya.ClashGNOME.metainfo.xml
 ```
 
 ## First run
@@ -84,7 +84,7 @@ sudo setcap cap_net_admin,cap_net_bind_service,cap_dac_override,cap_sys_ptrace+e
 - App config: `~/.config/clash-gnome/config.json`
 - Subscriptions: `~/.local/share/clash-gnome/subscriptions/<id>.yaml`
 - Generated mihomo config: `~/.local/share/clash-gnome/mihomo/config.yaml`
-- Autostart: `~/.config/autostart/io.github.langya.ClashGNOME.desktop`
+- Autostart: `~/.config/autostart/io.langya.ClashGNOME.desktop`
 
 Every setting change (mode, ports, TUN toggle, theme, subscriptions, etc.) is written to `config.json` immediately, so all state survives an app restart.
 

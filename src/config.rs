@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-pub const APP_ID: &str = "io.github.langya.ClashGNOME";
+pub const APP_ID: &str = "io.langya.ClashGNOME";
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ThemeMode {
@@ -11,6 +11,41 @@ pub enum ThemeMode {
     System,
     Light,
     Dark,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IntervalUnit {
+    Minutes,
+    Hours,
+    Days,
+}
+
+impl IntervalUnit {
+    pub fn to_minutes(self, value: u32) -> u64 {
+        match self {
+            IntervalUnit::Minutes => value as u64,
+            IntervalUnit::Hours => value as u64 * 60,
+            IntervalUnit::Days => value as u64 * 60 * 24,
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            IntervalUnit::Minutes => "minutes",
+            IntervalUnit::Hours => "hours",
+            IntervalUnit::Days => "days",
+        }
+    }
+    pub fn short(self) -> &'static str {
+        match self {
+            IntervalUnit::Minutes => "m",
+            IntervalUnit::Hours => "h",
+            IntervalUnit::Days => "d",
+        }
+    }
+}
+
+impl Default for IntervalUnit {
+    fn default() -> Self { IntervalUnit::Hours }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,7 +63,17 @@ pub struct Subscription {
     pub total: u64,
     #[serde(default)]
     pub expire: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub auto_update: bool,
+    #[serde(default = "default_auto_update_value")]
+    pub auto_update_value: u32,
+    #[serde(default)]
+    pub auto_update_unit: IntervalUnit,
+    #[serde(default)]
+    pub use_proxy_for_update: bool,
 }
+
+fn default_auto_update_value() -> u32 { 24 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -80,6 +125,21 @@ pub struct AppConfig {
     pub dns_nameservers: Vec<String>,
     #[serde(default = "default_dns_fallback")]
     pub dns_fallback: Vec<String>,
+    #[serde(default = "default_user_agent")]
+    pub subscription_user_agent: String,
+    #[serde(default = "default_true")]
+    pub ipv6: bool,
+    #[serde(default = "default_log_max_size")]
+    pub log_max_size_mb: u32,
+    #[serde(default = "default_log_max_days")]
+    pub log_max_days: u32,
+}
+
+fn default_log_max_size() -> u32 { 20 }
+fn default_log_max_days() -> u32 { 7 }
+
+pub fn default_user_agent() -> String {
+    format!("mihomo.gnome/v{} (clash.meta)", env!("CARGO_PKG_VERSION"))
 }
 
 fn default_mihomo_path() -> String {
@@ -143,6 +203,10 @@ impl Default for AppConfig {
             dns_enhanced_mode: default_dns_enhanced(),
             dns_nameservers: default_dns_nameservers(),
             dns_fallback: default_dns_fallback(),
+            subscription_user_agent: default_user_agent(),
+            ipv6: true,
+            log_max_size_mb: default_log_max_size(),
+            log_max_days: default_log_max_days(),
         }
     }
 }

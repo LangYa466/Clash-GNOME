@@ -240,10 +240,10 @@ fn group_card(
             btn.add_css_class("proxy-node-active");
         }
         let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        hbox.set_margin_top(8);
-        hbox.set_margin_bottom(8);
+        hbox.set_margin_top(6);
+        hbox.set_margin_bottom(6);
         hbox.set_margin_start(10);
-        hbox.set_margin_end(10);
+        hbox.set_margin_end(6);
         let dot = gtk::Label::new(Some("●"));
         let delay = last_delay(all_proxies, &member);
         let (delay_text, delay_class) = format_delay(delay);
@@ -255,9 +255,44 @@ fn group_card(
         let delay_lbl = gtk::Label::new(Some(&delay_text));
         delay_lbl.add_css_class("dim-label");
         delay_lbl.add_css_class("caption");
+
+        let test_btn = gtk::Button::from_icon_name("emoji-recent-symbolic");
+        test_btn.add_css_class("flat");
+        test_btn.add_css_class("circular");
+        test_btn.set_valign(gtk::Align::Center);
+        test_btn.set_tooltip_text(Some(&format!("Test {}", member)));
+        {
+            let core = state.core.clone();
+            let node_name = member.clone();
+            let delay_lbl = delay_lbl.clone();
+            let dot = dot.clone();
+            test_btn.connect_clicked(move |b| {
+                b.set_sensitive(false);
+                let core = core.clone();
+                let node_name = node_name.clone();
+                let delay_lbl_c = delay_lbl.clone();
+                let dot_c = dot.clone();
+                let b_c = b.clone();
+                util::spawn(async move {
+                    let api = core.api();
+                    api.test_delay(&node_name, TEST_URL, TEST_TIMEOUT_MS).await
+                }, move |res| {
+                    b_c.set_sensitive(true);
+                    let d = res.ok();
+                    let (txt, cls) = format_delay(d);
+                    delay_lbl_c.set_text(&txt);
+                    for c in ["delay-good", "delay-mid", "delay-bad", "delay-unknown"] {
+                        dot_c.remove_css_class(c);
+                    }
+                    dot_c.add_css_class(cls);
+                });
+            });
+        }
+
         hbox.append(&dot);
         hbox.append(&label);
         hbox.append(&delay_lbl);
+        hbox.append(&test_btn);
         btn.set_child(Some(&hbox));
 
         if is_selector {

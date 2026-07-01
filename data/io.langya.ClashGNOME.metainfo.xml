@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.langya.ClashGNOME</id>
+  <id>io.langya.ClashGNOME</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>Clash GNOME</name>
@@ -16,7 +16,7 @@
       <li>Autostart integration and background hidden mode</li>
     </ul>
   </description>
-  <launchable type="desktop-id">io.github.langya.ClashGNOME.desktop</launchable>
+  <launchable type="desktop-id">io.langya.ClashGNOME.desktop</launchable>
   <url type="homepage">https://github.com/LangYa466/Clash-GNOME</url>
   <url type="bugtracker">https://github.com/LangYa466/Clash-GNOME/issues</url>
   <developer_name>LangYa466</developer_name>

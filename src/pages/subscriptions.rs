@@ -198,6 +198,94 @@ fn sub_card(sub: &Subscription, is_active: bool, state: Arc<AppState>, render: R
     quota_box.append(&bar);
     card.append(&quota_box);
 
+    // Auto-update row
+    let au_row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    au_row.set_margin_start(16);
+    au_row.set_margin_end(16);
+    au_row.set_margin_top(4);
+    let au_check = gtk::CheckButton::builder()
+        .label("Auto-update every")
+        .active(sub.auto_update)
+        .build();
+    let au_spin = gtk::SpinButton::with_range(1.0, 999.0, 1.0);
+    au_spin.set_value(sub.auto_update_value as f64);
+    au_spin.set_sensitive(sub.auto_update);
+    au_spin.set_width_chars(4);
+    let au_unit = gtk::DropDown::from_strings(&["minutes", "hours", "days"]);
+    au_unit.set_selected(match sub.auto_update_unit {
+        crate::config::IntervalUnit::Minutes => 0,
+        crate::config::IntervalUnit::Hours => 1,
+        crate::config::IntervalUnit::Days => 2,
+    });
+    au_unit.set_sensitive(sub.auto_update);
+    au_row.append(&au_check);
+    au_row.append(&au_spin);
+    au_row.append(&au_unit);
+
+    let proxy_check = gtk::CheckButton::builder()
+        .label("Update through proxy")
+        .active(sub.use_proxy_for_update)
+        .halign(gtk::Align::End)
+        .hexpand(true)
+        .tooltip_text("When on, fetching the subscription goes through the running mihomo mixed port. When off, requests bypass the proxy.")
+        .build();
+    au_row.append(&proxy_check);
+
+    {
+        let state = state.clone();
+        let sub_id_c = sub.id.clone();
+        proxy_check.connect_toggled(move |c| {
+            if let Some(sub) = state.cfg.write().unwrap().subscriptions.iter_mut().find(|s| s.id == sub_id_c) {
+                sub.use_proxy_for_update = c.is_active();
+            }
+            let _ = crate::config::persist(&state.cfg);
+        });
+    }
+
+    card.append(&au_row);
+
+    {
+        let state = state.clone();
+        let sub_id_c = sub.id.clone();
+        let au_spin_c = au_spin.clone();
+        let au_unit_c = au_unit.clone();
+        au_check.connect_toggled(move |c| {
+            let on = c.is_active();
+            au_spin_c.set_sensitive(on);
+            au_unit_c.set_sensitive(on);
+            if let Some(s) = state.cfg.write().unwrap().subscriptions.iter_mut().find(|s| s.id == sub_id_c) {
+                s.auto_update = on;
+            }
+            let _ = crate::config::persist(&state.cfg);
+        });
+    }
+    {
+        let state = state.clone();
+        let sub_id_c = sub.id.clone();
+        au_spin.connect_value_changed(move |s| {
+            let v = s.value() as u32;
+            if let Some(sub) = state.cfg.write().unwrap().subscriptions.iter_mut().find(|s| s.id == sub_id_c) {
+                sub.auto_update_value = v.max(1);
+            }
+            let _ = crate::config::persist(&state.cfg);
+        });
+    }
+    {
+        let state = state.clone();
+        let sub_id_c = sub.id.clone();
+        au_unit.connect_selected_notify(move |dd| {
+            let u = match dd.selected() {
+                0 => crate::config::IntervalUnit::Minutes,
+                2 => crate::config::IntervalUnit::Days,
+                _ => crate::config::IntervalUnit::Hours,
+            };
+            if let Some(sub) = state.cfg.write().unwrap().subscriptions.iter_mut().find(|s| s.id == sub_id_c) {
+                sub.auto_update_unit = u;
+            }
+            let _ = crate::config::persist(&state.cfg);
+        });
+    }
+
     let footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     footer.set_margin_top(6);
     footer.set_margin_bottom(14);
@@ -256,8 +344,15 @@ fn sub_card(sub: &Subscription, is_active: bool, state: Arc<AppState>, render: R
             let sub_id_c = sub_c.id.clone();
             let b_c = b.clone();
             let render = render.clone();
+            let (ua, proxy_url) = {
+                let cfg = state.cfg.read().unwrap();
+                let px = if sub_c.use_proxy_for_update {
+                    Some(format!("http://{}:{}", cfg.api_host, cfg.mixed_port))
+                } else { None };
+                (cfg.subscription_user_agent.clone(), px)
+            };
             util::spawn(async move {
-                subscription::fetch(&sub_c).await
+                subscription::fetch_with_proxy(&sub_c, &ua, proxy_url.as_deref()).await
             }, move |res| {
                 b_c.set_sensitive(true);
                 if let Ok(out) = res {
@@ -359,13 +454,18 @@ fn open_add_url_dialog(parent: &gtk::Box, state: Arc<AppState>, render: Rc<dyn F
             download: 0,
             total: 0,
             expire: None,
+            auto_update: false,
+            auto_update_value: 24,
+            auto_update_unit: crate::config::IntervalUnit::Hours,
+            use_proxy_for_update: false,
         };
         let state = state.clone();
         let dialog_c2 = dialog_c.clone();
         let render_cc = render_c.clone();
         let b_c = b.clone();
+        let ua = state.cfg.read().unwrap().subscription_user_agent.clone();
         util::spawn(async move {
-            let out = subscription::fetch(&sub).await;
+            let out = subscription::fetch(&sub, &ua).await;
             (sub, out)
         }, move |(mut sub, out)| {
             b_c.set_sensitive(true);
@@ -459,6 +559,10 @@ fn open_add_file_dialog(parent: &gtk::Box, state: Arc<AppState>, render: Rc<dyn 
             download: 0,
             total: 0,
             expire: None,
+            auto_update: false,
+            auto_update_value: 24,
+            auto_update_unit: crate::config::IntervalUnit::Hours,
+            use_proxy_for_update: false,
         };
         let dest = crate::config::subscriptions_dir().join(format!("{}.yaml", sub.id));
         if let Err(e) = std::fs::write(&dest, &text) {

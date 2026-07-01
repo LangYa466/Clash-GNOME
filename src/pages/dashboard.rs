@@ -63,6 +63,48 @@ fn content(state: Arc<AppState>) -> gtk::Box {
     }
     vbox.append(&cards);
 
+    // Mode indicator strip
+    let mode_strip = gtk::FlowBox::builder()
+        .homogeneous(true)
+        .selection_mode(gtk::SelectionMode::None)
+        .min_children_per_line(2)
+        .max_children_per_line(4)
+        .row_spacing(10)
+        .column_spacing(10)
+        .build();
+    let core_mode_pill = mode_pill("Core Mode", "-", "text-x-generic-symbolic");
+    let tun_pill = mode_pill("TUN", "-", "network-vpn-symbolic");
+    let dns_pill = mode_pill("DNS", "-", "network-server-symbolic");
+    let sys_pill = mode_pill("System Proxy", "-", "network-workgroup-symbolic");
+    for p in [&core_mode_pill.root, &tun_pill.root, &dns_pill.root, &sys_pill.root] {
+        mode_strip.insert(p, -1);
+    }
+    vbox.append(&mode_strip);
+
+    // Reactive updater — every 2s pulls from cfg + gsettings.
+    {
+        let state = state.clone();
+        let core_v = core_mode_pill.value.clone();
+        let tun_v = tun_pill.value.clone();
+        let dns_v = dns_pill.value.clone();
+        let sys_v = sys_pill.value.clone();
+        let update = move || {
+            let cfg = state.cfg.read().unwrap();
+            core_v.set_text(&title_case(&cfg.mode));
+            let tun_txt = if cfg.tun_enabled { format!("On · {}", cfg.tun_stack) } else { "Off".to_string() };
+            tun_v.set_text(&tun_txt);
+            let dns_txt = if cfg.dns_enable { format!("On · {}", cfg.dns_enhanced_mode) } else { "Off".to_string() };
+            dns_v.set_text(&dns_txt);
+            drop(cfg);
+            sys_v.set_text(&crate::util::system_proxy_summary());
+        };
+        update();
+        glib::timeout_add_seconds_local(2, move || {
+            update();
+            glib::ControlFlow::Continue
+        });
+    }
+
     // Mode + core control card
     let mode_card = adw::PreferencesGroup::new();
     mode_card.set_title("Core &amp; Mode");
@@ -315,5 +357,51 @@ fn stat_card(title: &str, initial: &str, icon: &str, accent_class: &str) -> Stat
     StatCard {
         root: card.upcast(),
         value_label,
+    }
+}
+
+struct ModePill {
+    root: gtk::Widget,
+    value: gtk::Label,
+}
+
+fn mode_pill(title: &str, initial: &str, icon: &str) -> ModePill {
+    let card = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    card.add_css_class("card");
+    card.add_css_class("mode-pill");
+    card.set_margin_top(0);
+    card.set_margin_bottom(0);
+    card.set_hexpand(true);
+    let img = gtk::Image::from_icon_name(icon);
+    img.set_pixel_size(20);
+    img.add_css_class("dim-label");
+    img.set_margin_start(14);
+    img.set_margin_top(10);
+    img.set_margin_bottom(10);
+    let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    vbox.set_margin_top(8);
+    vbox.set_margin_bottom(8);
+    vbox.set_margin_end(14);
+    vbox.set_hexpand(true);
+    let title_lbl = gtk::Label::new(Some(title));
+    title_lbl.set_xalign(0.0);
+    title_lbl.add_css_class("dim-label");
+    title_lbl.add_css_class("caption");
+    let value = gtk::Label::new(Some(initial));
+    value.set_xalign(0.0);
+    value.add_css_class("body");
+    value.add_css_class("mode-pill-value");
+    vbox.append(&title_lbl);
+    vbox.append(&value);
+    card.append(&img);
+    card.append(&vbox);
+    ModePill { root: card.upcast(), value }
+}
+
+fn title_case(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
     }
 }
