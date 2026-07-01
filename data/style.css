@@ -1,0 +1,161 @@
+/* ==== Clash GNOME custom styling ==== */
+
+.clash-gnome .sidebar {
+  background: linear-gradient(180deg,
+    alpha(@accent_bg_color, 0.06) 0%,
+    alpha(@accent_bg_color, 0.00) 45%);
+  border-right: 1px solid alpha(@borders, 0.5);
+}
+
+.clash-gnome .sidebar .navigation-sidebar {
+  background: transparent;
+  padding: 4px 8px 12px 8px;
+}
+
+.clash-gnome .sidebar .navigation-sidebar > row {
+  padding: 2px 6px;
+  margin: 2px 4px;
+  border-radius: 10px;
+  transition: background 120ms ease-in-out;
+}
+.clash-gnome .sidebar .navigation-sidebar > row:hover {
+  background: alpha(@card_shade_color, 0.55);
+}
+.clash-gnome .sidebar .navigation-sidebar > row:selected {
+  background: alpha(@accent_bg_color, 0.18);
+  color: @accent_color;
+  font-weight: 600;
+}
+
+/* ---- Status pill in header ---- */
+.status-pill {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.85em;
+  font-weight: 600;
+  min-width: 70px;
+}
+.status-pill.status-stopped {
+  background: alpha(@window_fg_color, 0.10);
+  color: @window_fg_color;
+}
+.status-pill.status-starting {
+  background: alpha(#f9c74f, 0.20);
+  color: #f9c74f;
+}
+.status-pill.status-running {
+  background: alpha(#43c88a, 0.20);
+  color: #43c88a;
+}
+.status-pill.status-failed {
+  background: alpha(#e57373, 0.22);
+  color: #e57373;
+}
+
+/* Pill buttons */
+button.pill {
+  border-radius: 999px;
+  padding: 6px 18px;
+  font-weight: 600;
+}
+
+/* ---- Stat cards ---- */
+.stat-card {
+  border-radius: 16px;
+  background: @card_bg_color;
+  box-shadow: 0 1px 2px alpha(black, 0.06);
+  transition: transform 120ms ease-out, box-shadow 120ms ease-out;
+}
+.stat-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px alpha(black, 0.10);
+}
+.stat-card-icon {
+  padding: 6px;
+  border-radius: 10px;
+  color: white;
+}
+.stat-card.accent-blue .stat-card-icon    { background: linear-gradient(135deg, #4facfe, #00c6ff); }
+.stat-card.accent-purple .stat-card-icon  { background: linear-gradient(135deg, #9f7aea, #6b46c1); }
+.stat-card.accent-teal .stat-card-icon    { background: linear-gradient(135deg, #38b2ac, #2c7a7b); }
+.stat-card.accent-green .stat-card-icon   { background: linear-gradient(135deg, #48bb78, #22a06b); }
+.stat-card.accent-orange .stat-card-icon  { background: linear-gradient(135deg, #f6ad55, #ed8936); }
+.stat-card.accent-pink .stat-card-icon    { background: linear-gradient(135deg, #f687b3, #d53f8c); }
+
+.stat-card-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* ---- Proxy group cards ---- */
+.proxy-group {
+  border-radius: 16px;
+  background: @card_bg_color;
+  box-shadow: 0 1px 2px alpha(black, 0.05);
+}
+.proxy-node {
+  border-radius: 12px;
+  padding: 0;
+  background: alpha(@card_shade_color, 0.6);
+  border: 1px solid transparent;
+  transition: border-color 120ms ease-in-out, background 120ms ease-in-out;
+}
+.proxy-node:hover {
+  background: alpha(@card_shade_color, 0.9);
+}
+.proxy-node-active {
+  background: alpha(@accent_bg_color, 0.18);
+  border-color: @accent_bg_color;
+  color: @accent_color;
+  font-weight: 600;
+}
+.delay-good  { color: #43c88a; }
+.delay-mid   { color: #f9c74f; }
+.delay-bad   { color: #e57373; }
+.delay-unknown { color: alpha(@window_fg_color, 0.35); }
+
+/* ---- Rules list ---- */
+.rule-type-badge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: alpha(@accent_bg_color, 0.18);
+  color: @accent_color;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ---- Subscriptions ---- */
+.sub-card {
+  border-radius: 16px;
+  background: @card_bg_color;
+}
+.sub-card-active {
+  outline: 2px solid @accent_bg_color;
+  outline-offset: -2px;
+}
+.active-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: alpha(#43c88a, 0.20);
+  color: #43c88a;
+  font-weight: 700;
+  font-size: 0.78em;
+}
+
+/* ---- Log view ---- */
+.log-view {
+  font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.88em;
+  background: shade(@view_bg_color, 0.97);
+}
+.log-scroll {
+  border-top: 1px solid alpha(@borders, 0.5);
+}
+
+/* ---- ProgressBar warning ---- */
+progressbar.warning trough > progress {
+  background-color: #e57373;
+}

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.langya.ClashGNOME</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Clash GNOME</name>
+  <summary>Modern GNOME frontend for the mihomo (Clash Meta) proxy</summary>
+  <description>
+    <p>Clash GNOME is a native GTK4 + libadwaita GUI for the mihomo (Clash Meta) proxy core. It provides:</p>
+    <ul>
+      <li>Subscription management with quota tracking</li>
+      <li>Proxy group selection and latency testing</li>
+      <li>Rule inspection and connection monitoring</li>
+      <li>TUN mode with system stack support</li>
+      <li>Adaptive light/dark theming</li>
+      <li>Autostart integration and background hidden mode</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.langya.ClashGNOME.desktop</launchable>
+  <url type="homepage">https://github.com/LangYa466/Clash-GNOME</url>
+  <url type="bugtracker">https://github.com/LangYa466/Clash-GNOME/issues</url>
+  <developer_name>LangYa466</developer_name>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-07-02">
+      <description><p>Initial release.</p></description>
+    </release>
+  </releases>
+</component>
