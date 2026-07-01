@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.1.0). Leave empty to build without publishing a release."
+        required: false
+        default: ""
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+            target: aarch64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libdbus-1-dev \
+            libssl-dev \
+            build-essential \
+            pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build .deb package
+        run: cargo deb --no-build --target ${{ matrix.target }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            VERSION="${{ github.event.inputs.tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="dev-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building version: ${VERSION}"
+
+      - name: Stage tarball
+        run: |
+          STAGE=stage/clash-gnome-${{ steps.version.outputs.version }}-${{ matrix.arch }}-linux
+          mkdir -p "${STAGE}"
+          cp target/${{ matrix.target }}/release/clash-gnome "${STAGE}/"
+          cp README.md LICENSE "${STAGE}/"
+          mkdir -p "${STAGE}/data"
+          cp data/*.desktop data/*.metainfo.xml data/style.css "${STAGE}/data/"
+          cat > "${STAGE}/install.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          PREFIX="${PREFIX:-/usr/local}"
+          install -Dm755 clash-gnome "${PREFIX}/bin/clash-gnome"
+          install -Dm644 data/io.langya.ClashGNOME.desktop "${PREFIX}/share/applications/io.langya.ClashGNOME.desktop"
+          install -Dm644 data/io.langya.ClashGNOME.metainfo.xml "${PREFIX}/share/metainfo/io.langya.ClashGNOME.metainfo.xml"
+          echo "Installed clash-gnome to ${PREFIX}/bin/clash-gnome"
+          SH
+          chmod +x "${STAGE}/install.sh"
+          cd stage
+          tar czf clash-gnome-${{ steps.version.outputs.version }}-${{ matrix.arch }}-linux.tar.gz clash-gnome-${{ steps.version.outputs.version }}-${{ matrix.arch }}-linux
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          mv stage/*.tar.gz out/
+          cp target/${{ matrix.target }}/debian/*.deb out/
+          ls -lh out/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: clash-gnome-${{ matrix.arch }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: List
+        run: find dist -type f
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

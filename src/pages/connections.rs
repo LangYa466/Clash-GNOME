@@ -20,6 +20,11 @@ enum SortKey {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NetworkFilter { All, Tcp, Udp }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StateFilter { Active, Closed, All }
+
+const MAX_CLOSED: usize = 500;
+
 pub fn build(state: Arc<AppState>) -> gtk::Widget {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -39,6 +44,10 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
         .hexpand(true)
         .build();
     toolbar.append(&search);
+
+    let state_dd = gtk::DropDown::from_strings(&["Active", "Closed", "All"]);
+    state_dd.set_tooltip_text(Some("Connection state"));
+    toolbar.append(&state_dd);
 
     let net_dd = gtk::DropDown::from_strings(&["All", "TCP", "UDP"]);
     net_dd.set_tooltip_text(Some("Network filter"));
@@ -71,7 +80,9 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
     let store = gio::ListStore::new::<ConnObject>();
     let sort_key = Rc::new(std::cell::Cell::new(SortKey::Time));
     let net_filter = Rc::new(std::cell::Cell::new(NetworkFilter::All));
+    let state_filter = Rc::new(std::cell::Cell::new(StateFilter::Active));
     let search_text = Rc::new(RefCell::new(String::new()));
+    let closed_conns: Rc<RefCell<Vec<ConnRecord>>> = Rc::new(RefCell::new(Vec::new()));
 
     let filter = gtk::CustomFilter::new({
         let net_filter = net_filter.clone();
@@ -79,8 +90,8 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
         move |obj| {
             let c = obj.downcast_ref::<ConnObject>().unwrap();
             match net_filter.get() {
-                NetworkFilter::Tcp if c.network().to_lowercase() != "tcp" => return false,
-                NetworkFilter::Udp if c.network().to_lowercase() != "udp" => return false,
+                NetworkFilter::Tcp if !c.network().eq_ignore_ascii_case("tcp") => return false,
+                NetworkFilter::Udp if !c.network().eq_ignore_ascii_case("udp") => return false,
                 _ => {}
             }
             let q = search_text.borrow();
@@ -91,6 +102,7 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
                 || c.chains().to_lowercase().contains(&q)
                 || c.rule().to_lowercase().contains(&q)
                 || c.process().to_lowercase().contains(&q)
+                || c.inbound_type().to_lowercase().contains(&q)
         }
     });
     let filter_model = gtk::FilterListModel::new(Some(store.clone()), Some(filter.clone()));
@@ -107,9 +119,15 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
         row.set_margin_end(20);
 
         let l1 = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        let icon = gtk::Image::from_icon_name("application-x-executable-symbolic");
+        icon.set_pixel_size(20);
+        icon.set_valign(gtk::Align::Center);
         let proto_lbl = gtk::Label::new(None);
         proto_lbl.add_css_class("proto-badge");
         proto_lbl.set_width_request(48);
+        let inbound_lbl = gtk::Label::new(None);
+        inbound_lbl.add_css_class("proto-badge");
+        inbound_lbl.add_css_class("inbound-badge");
         let host = gtk::Label::new(None);
         host.set_xalign(0.0);
         host.set_hexpand(true);
@@ -129,7 +147,9 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
         close_btn.add_css_class("flat");
         close_btn.add_css_class("circular");
         close_btn.set_tooltip_text(Some("Close this connection"));
+        l1.append(&icon);
         l1.append(&proto_lbl);
+        l1.append(&inbound_lbl);
         l1.append(&host);
         l1.append(&now_up);
         l1.append(&now_down);
@@ -177,11 +197,21 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
         let obj = item.item().and_downcast::<ConnObject>().unwrap();
         let row = item.child().and_downcast::<gtk::Box>().unwrap();
         let l1 = row.first_child().and_then(|c| c.downcast::<gtk::Box>().ok()).unwrap();
-        let proto = l1.first_child().and_then(|c| c.downcast::<gtk::Label>().ok()).unwrap();
-        let host = proto.next_sibling().and_then(|c| c.downcast::<gtk::Label>().ok()).unwrap();
+        let icon = l1.first_child().and_then(|c| c.downcast::<gtk::Image>().ok()).unwrap();
+        let proto = icon.next_sibling().and_then(|c| c.downcast::<gtk::Label>().ok()).unwrap();
+        let inbound = proto.next_sibling().and_then(|c| c.downcast::<gtk::Label>().ok()).unwrap();
+        let host = inbound.next_sibling().and_then(|c| c.downcast::<gtk::Label>().ok()).unwrap();
         let now_up = host.next_sibling().and_then(|c| c.downcast::<gtk::Label>().ok()).unwrap();
         let now_down = now_up.next_sibling().and_then(|c| c.downcast::<gtk::Label>().ok()).unwrap();
+        let close_btn = now_down.next_sibling().and_then(|c| c.downcast::<gtk::Button>().ok()).unwrap();
         let l2 = l1.next_sibling().and_then(|c| c.downcast::<gtk::Label>().ok()).unwrap();
+
+        // Icon
+        let proc_name = obj.process();
+        match icon_for_process(&proc_name, &obj.process_path()) {
+            Some(g) => icon.set_from_gicon(&g),
+            None => icon.set_icon_name(Some("application-x-executable-symbolic")),
+        }
 
         let net = obj.network().to_uppercase();
         proto.set_text(&net);
@@ -192,15 +222,31 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
             _ => "proto-other",
         });
 
+        let inbound_text = obj.inbound_type();
+        if inbound_text.is_empty() {
+            inbound.set_visible(false);
+        } else {
+            inbound.set_visible(true);
+            inbound.set_text(&inbound_text.to_uppercase());
+        }
+
         let display = if obj.host().is_empty() { obj.destination() } else { obj.host() };
         host.set_text(&display);
         now_up.set_text(&format!("up {}", util::format_speed(obj.now_up())));
         now_down.set_text(&format!("dn {}", util::format_speed(obj.now_down())));
 
+        // Close button only for active
+        close_btn.set_visible(!obj.is_closed());
+
+        // Row styling for closed
+        {
+        let c = "conn-closed"; row.remove_css_class(c); }
+        if obj.is_closed() { row.add_css_class("conn-closed"); }
+
         let mut meta = String::new();
+        if obj.is_closed() { meta.push_str(&format!("{} | ", obj.closed_ago())); }
         if !obj.chains().is_empty() { meta.push_str(&format!("Chain: {} | ", obj.chains())); }
         if !obj.rule().is_empty() { meta.push_str(&format!("Rule: {} | ", obj.rule())); }
-        let proc_name = obj.process();
         meta.push_str(&format!("Process: {} | Total ^{} v{}",
             if proc_name.is_empty() { "-" } else { proc_name.as_str() },
             util::format_bytes(obj.upload()),
@@ -228,8 +274,10 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
     stack.add_named(&empty, Some("empty"));
     root.append(&stack);
 
-    // Speed tracker across polls
-    let prev_snapshot: Rc<RefCell<HashMap<String, (u64, u64, Instant)>>> = Rc::new(RefCell::new(HashMap::new()));
+    // Speed tracker across polls: id -> (last_upload, last_download, last_time, last_now_up, last_now_down, last_item)
+    #[allow(clippy::type_complexity)]
+    let prev_snapshot: Rc<RefCell<HashMap<String, (u64, u64, Instant, u64, u64, crate::api::ConnectionItem)>>> =
+        Rc::new(RefCell::new(HashMap::new()));
 
     let refresh = {
         let core = state.core.clone();
@@ -237,6 +285,8 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
         let stack = stack.clone();
         let summary = summary.clone();
         let sort_key = sort_key.clone();
+        let state_filter = state_filter.clone();
+        let closed_conns = closed_conns.clone();
         let prev_snapshot = prev_snapshot.clone();
         Rc::new(move || {
             let core = core.clone();
@@ -244,6 +294,8 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
             let stack = stack.clone();
             let summary = summary.clone();
             let sort_key = sort_key.clone();
+            let state_filter = state_filter.clone();
+            let closed_conns = closed_conns.clone();
             let prev_snapshot = prev_snapshot.clone();
             util::spawn(async move {
                 let api = core.api();
@@ -257,7 +309,7 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
                         let mut enriched: Vec<(crate::api::ConnectionItem, u64, u64)> = Vec::with_capacity(r.connections.len());
                         for c in &r.connections {
                             let (nup, ndown) = match prev.get(&c.id) {
-                                Some((pu, pd, pt)) => {
+                                Some((pu, pd, pt, _, _, _)) => {
                                     let dt = now_ts.duration_since(*pt).as_secs_f64().max(0.001);
                                     let du = c.upload.saturating_sub(*pu) as f64 / dt;
                                     let dd = c.download.saturating_sub(*pd) as f64 / dt;
@@ -265,11 +317,32 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
                                 }
                                 None => (0, 0),
                             };
-                            new_snap.insert(c.id.clone(), (c.upload, c.download, now_ts));
+                            new_snap.insert(c.id.clone(), (c.upload, c.download, now_ts, nup, ndown, c.clone()));
                             enriched.push((c.clone(), nup, ndown));
+                        }
+
+                        // Detect newly closed connections
+                        let mut closed = closed_conns.borrow_mut();
+                        for (id, (pu, pd, _, nup, ndown, item)) in prev.iter() {
+                            if !new_snap.contains_key(id) {
+                                let mut item = item.clone();
+                                item.upload = *pu;
+                                item.download = *pd;
+                                closed.push(ConnRecord {
+                                    item,
+                                    now_up: *nup,
+                                    now_down: *ndown,
+                                    closed_at: Instant::now(),
+                                });
+                            }
+                        }
+                        if closed.len() > MAX_CLOSED {
+                            let excess = closed.len() - MAX_CLOSED;
+                            closed.drain(0..excess);
                         }
                         *prev = new_snap;
 
+                        // Sort active
                         match sort_key.get() {
                             SortKey::Time => enriched.sort_by(|a, b| b.0.start.cmp(&a.0.start)),
                             SortKey::NowUp => enriched.sort_by_key(|e| std::cmp::Reverse(e.1)),
@@ -277,18 +350,39 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
                             SortKey::AllUp => enriched.sort_by_key(|e| std::cmp::Reverse(e.0.upload)),
                             SortKey::AllDown => enriched.sort_by_key(|e| std::cmp::Reverse(e.0.download)),
                         }
+                        // Sort closed (most recent first)
+                        let mut closed_sorted: Vec<&ConnRecord> = closed.iter().collect();
+                        match sort_key.get() {
+                            SortKey::Time => closed_sorted.sort_by_key(|r| std::cmp::Reverse(r.closed_at)),
+                            SortKey::NowUp => closed_sorted.sort_by_key(|r| std::cmp::Reverse(r.now_up)),
+                            SortKey::NowDown => closed_sorted.sort_by_key(|r| std::cmp::Reverse(r.now_down)),
+                            SortKey::AllUp => closed_sorted.sort_by_key(|r| std::cmp::Reverse(r.item.upload)),
+                            SortKey::AllDown => closed_sorted.sort_by_key(|r| std::cmp::Reverse(r.item.download)),
+                        }
 
                         store.remove_all();
-                        for (c, nup, ndown) in &enriched {
-                            store.append(&ConnObject::from_api(c, *nup, *ndown));
+                        let sf = state_filter.get();
+                        let mut visible_count = 0usize;
+                        if matches!(sf, StateFilter::Active | StateFilter::All) {
+                            for (c, nup, ndown) in &enriched {
+                                store.append(&ConnObject::from_api(c, *nup, *ndown));
+                                visible_count += 1;
+                            }
+                        }
+                        if matches!(sf, StateFilter::Closed | StateFilter::All) {
+                            for rec in &closed_sorted {
+                                store.append(&ConnObject::from_closed(rec));
+                                visible_count += 1;
+                            }
                         }
                         summary.set_text(&format!(
-                            "{} active | Up {} | Down {}",
+                            "{} active | {} closed | Up {} | Down {}",
                             enriched.len(),
+                            closed.len(),
                             util::format_bytes(r.upload_total),
                             util::format_bytes(r.download_total),
                         ));
-                        if enriched.is_empty() {
+                        if visible_count == 0 {
                             stack.set_visible_child_name("empty");
                         } else {
                             stack.set_visible_child_name("list");
@@ -321,6 +415,18 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
                 _ => NetworkFilter::All,
             });
             filter.changed(gtk::FilterChange::Different);
+        });
+    }
+    {
+        let state_filter = state_filter.clone();
+        let r = refresh.clone();
+        state_dd.connect_selected_notify(move |dd| {
+            state_filter.set(match dd.selected() {
+                1 => StateFilter::Closed,
+                2 => StateFilter::All,
+                _ => StateFilter::Active,
+            });
+            r();
         });
     }
     {
@@ -375,7 +481,7 @@ fn show_detail_dialog(parent: Option<&gtk::Window>, obj: &ConnObject) {
     group.set_title("Connection");
     add_kv(&group, "ID", &obj.id());
     add_kv(&group, "Network", &obj.network());
-    add_kv(&group, "Type", &obj.ty());
+    add_kv(&group, "Inbound Type", &obj.inbound_type());
     let host_s = obj.host();
     add_kv(&group, "Host", if host_s.is_empty() { "-" } else { host_s.as_str() });
     add_kv(&group, "Source", &obj.source());
@@ -412,6 +518,44 @@ fn add_kv(g: &adw::PreferencesGroup, k: &str, v: &str) {
     g.add(&row);
 }
 
+thread_local! {
+    static ICON_CACHE: RefCell<Option<HashMap<String, gio::Icon>>> = const { RefCell::new(None) };
+    static ICON_MISS: RefCell<std::collections::HashSet<String>> = RefCell::new(std::collections::HashSet::new());
+}
+
+fn build_icon_cache() -> HashMap<String, gio::Icon> {
+    let mut map = HashMap::new();
+    for info in gio::AppInfo::all() {
+        let exec = info.executable();
+        let name = exec.file_name().and_then(|s| s.to_str()).map(|s| s.to_string());
+        if let (Some(name), Some(icon)) = (name, info.icon()) {
+            map.entry(name.to_lowercase()).or_insert(icon);
+        }
+    }
+    map
+}
+
+fn icon_for_process(name: &str, path: &str) -> Option<gio::Icon> {
+    if name.is_empty() { return None; }
+    ICON_CACHE.with(|c| {
+        if c.borrow().is_none() { *c.borrow_mut() = Some(build_icon_cache()); }
+    });
+    let key = name.to_lowercase();
+    let hit = ICON_CACHE.with(|c| c.borrow().as_ref().and_then(|m| m.get(&key).cloned()));
+    if hit.is_some() { return hit; }
+
+    // Try path basename without extension (e.g., /snap/foo/bin/foo)
+    if !path.is_empty() {
+        let stem = std::path::Path::new(path).file_stem().and_then(|s| s.to_str()).map(|s| s.to_lowercase());
+        if let Some(s) = stem {
+            let hit = ICON_CACHE.with(|c| c.borrow().as_ref().and_then(|m| m.get(&s).cloned()));
+            if hit.is_some() { return hit; }
+        }
+    }
+    ICON_MISS.with(|m| { m.borrow_mut().insert(key); });
+    None
+}
+
 use gtk::gio;
 use gtk::subclass::prelude::*;
 
@@ -433,9 +577,12 @@ mod imp_conn {
         pub chains: RefCell<String>,
         pub rule: RefCell<String>,
         pub process: RefCell<String>,
+        pub process_path: RefCell<String>,
         pub network: RefCell<String>,
-        pub ty: RefCell<String>,
+        pub inbound_type: RefCell<String>,
         pub start: RefCell<String>,
+        pub is_closed: RefCell<bool>,
+        pub closed_ago: RefCell<String>,
     }
 
     #[glib::object_subclass]
@@ -477,9 +624,18 @@ impl ConnObject {
             .unwrap_or("")
             .to_string();
         o.imp().process.replace(proc_name);
+        o.imp().process_path.replace(c.metadata.process_path.clone());
         o.imp().network.replace(c.metadata.network.clone());
-        o.imp().ty.replace(c.metadata.ty.clone());
+        o.imp().inbound_type.replace(c.metadata.ty.clone());
         o.imp().start.replace(c.start.clone());
+        o.imp().is_closed.replace(false);
+        o
+    }
+    pub fn from_closed(rec: &ConnRecord) -> Self {
+        let o = Self::from_api(&rec.item, rec.now_up, rec.now_down);
+        o.imp().is_closed.replace(true);
+        let secs = rec.closed_at.elapsed().as_secs();
+        o.imp().closed_ago.replace(format!("closed {}s ago", secs));
         o
     }
     pub fn id(&self) -> String { self.imp().id.borrow().clone() }
@@ -493,7 +649,17 @@ impl ConnObject {
     pub fn chains(&self) -> String { self.imp().chains.borrow().clone() }
     pub fn rule(&self) -> String { self.imp().rule.borrow().clone() }
     pub fn process(&self) -> String { self.imp().process.borrow().clone() }
+    pub fn process_path(&self) -> String { self.imp().process_path.borrow().clone() }
     pub fn network(&self) -> String { self.imp().network.borrow().clone() }
-    pub fn ty(&self) -> String { self.imp().ty.borrow().clone() }
+    pub fn inbound_type(&self) -> String { self.imp().inbound_type.borrow().clone() }
     pub fn start(&self) -> String { self.imp().start.borrow().clone() }
+    pub fn is_closed(&self) -> bool { *self.imp().is_closed.borrow() }
+    pub fn closed_ago(&self) -> String { self.imp().closed_ago.borrow().clone() }
+}
+
+pub struct ConnRecord {
+    pub item: crate::api::ConnectionItem,
+    pub now_up: u64,
+    pub now_down: u64,
+    pub closed_at: Instant,
 }

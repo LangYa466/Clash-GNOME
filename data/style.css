@@ -116,6 +116,16 @@ button.pill {
   background: alpha(@window_fg_color, 0.10);
   color: @window_fg_color;
 }
+.inbound-badge {
+  background: alpha(#43c88a, 0.16);
+  color: #43c88a;
+}
+.conn-closed {
+  opacity: 0.55;
+}
+.conn-closed .body {
+  text-decoration: line-through;
+}
 
 /* ---- Proxy group cards ---- */
 .proxy-group {

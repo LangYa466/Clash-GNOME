@@ -35,3 +35,24 @@ lto = "thin"
 codegen-units = 1
 strip = true
 opt-level = 3
+
+[package.metadata.deb]
+name = "clash-gnome"
+maintainer = "LangYa466 <langya466@gmail.com>"
+copyright = "2026, LangYa466 <langya466@gmail.com>"
+license-file = ["LICENSE", "0"]
+extended-description = """\
+A modern native GTK4 + libadwaita desktop client for the mihomo (Clash Meta) \
+proxy core, written in Rust. Provides dashboard, proxy groups, rules, \
+connections, subscription management, TUN mode, and system tray."""
+section = "net"
+priority = "optional"
+depends = "libgtk-4-1 (>= 4.10), libadwaita-1-0 (>= 1.5), libdbus-1-3, libc6"
+recommends = "mihomo"
+assets = [
+    ["target/release/clash-gnome", "usr/bin/", "755"],
+    ["data/io.langya.ClashGNOME.desktop", "usr/share/applications/", "644"],
+    ["data/io.langya.ClashGNOME.metainfo.xml", "usr/share/metainfo/", "644"],
+    ["LICENSE", "usr/share/doc/clash-gnome/", "644"],
+    ["README.md", "usr/share/doc/clash-gnome/", "644"],
+]

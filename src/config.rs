@@ -14,8 +14,10 @@ pub enum ThemeMode {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub enum IntervalUnit {
     Minutes,
+    #[default]
     Hours,
     Days,
 }
@@ -44,9 +46,6 @@ impl IntervalUnit {
     }
 }
 
-impl Default for IntervalUnit {
-    fn default() -> Self { IntervalUnit::Hours }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Subscription {

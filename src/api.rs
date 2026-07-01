@@ -332,9 +332,8 @@ impl Api {
                                     let line = buf.drain(..=pos).collect::<Vec<u8>>();
                                     let line = &line[..line.len()-1];
                                     if line.is_empty() { continue; }
-                                    if let Ok(ev) = serde_json::from_slice::<TrafficEvent>(line) {
-                                        if tx.send(ev).is_err() { return; }
-                                    }
+                                    if let Ok(ev) = serde_json::from_slice::<TrafficEvent>(line)
+                                        && tx.send(ev).is_err() { return; }
                                 }
                             }
                             Some(Err(e)) => { log::debug!("traffic stream err: {e}"); break; }
@@ -369,9 +368,8 @@ impl Api {
                                     let line = buf.drain(..=pos).collect::<Vec<u8>>();
                                     let line = &line[..line.len()-1];
                                     if line.is_empty() { continue; }
-                                    if let Ok(ev) = serde_json::from_slice::<MemoryEvent>(line) {
-                                        if tx.send(ev).is_err() { return; }
-                                    }
+                                    if let Ok(ev) = serde_json::from_slice::<MemoryEvent>(line)
+                                        && tx.send(ev).is_err() { return; }
                                 }
                             }
                             _ => break,
@@ -406,9 +404,8 @@ impl Api {
                                     let line = buf.drain(..=pos).collect::<Vec<u8>>();
                                     let line = &line[..line.len()-1];
                                     if line.is_empty() { continue; }
-                                    if let Ok(ev) = serde_json::from_slice::<LogEvent>(line) {
-                                        if tx.send(ev).is_err() { return; }
-                                    }
+                                    if let Ok(ev) = serde_json::from_slice::<LogEvent>(line)
+                                        && tx.send(ev).is_err() { return; }
                                 }
                             }
                             _ => break,

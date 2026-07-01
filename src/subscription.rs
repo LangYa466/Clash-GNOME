@@ -71,8 +71,8 @@ pub async fn fetch_with_proxy(
     let mut total = 0u64;
     let mut expire: Option<chrono::DateTime<Utc>> = None;
 
-    if let Some(hv) = resp.headers().get("subscription-userinfo") {
-        if let Ok(s) = hv.to_str() {
+    if let Some(hv) = resp.headers().get("subscription-userinfo")
+        && let Ok(s) = hv.to_str() {
             for part in s.split(';').map(str::trim) {
                 if let Some(v) = part.strip_prefix("upload=") {
                     upload = v.trim().parse().unwrap_or(0);
@@ -80,16 +80,13 @@ pub async fn fetch_with_proxy(
                     download = v.trim().parse().unwrap_or(0);
                 } else if let Some(v) = part.strip_prefix("total=") {
                     total = v.trim().parse().unwrap_or(0);
-                } else if let Some(v) = part.strip_prefix("expire=") {
-                    if let Ok(ts) = v.trim().parse::<i64>() {
-                        if ts > 0 {
+                } else if let Some(v) = part.strip_prefix("expire=")
+                    && let Ok(ts) = v.trim().parse::<i64>()
+                        && ts > 0 {
                             expire = Utc.timestamp_opt(ts, 0).single();
                         }
-                    }
-                }
             }
         }
-    }
 
     let text = resp.text().await?;
 

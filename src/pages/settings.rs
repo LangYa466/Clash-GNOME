@@ -107,14 +107,13 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
             let state = state.clone();
             let win = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
             dialog.open(win.as_ref(), None::<&gio::Cancellable>, move |res| {
-                if let Ok(file) = res {
-                    if let Some(p) = file.path() {
+                if let Ok(file) = res
+                    && let Some(p) = file.path() {
                         let s = p.to_string_lossy().into_owned();
                         path_row.set_text(&s);
                         state.cfg.write().unwrap().mihomo_path = s;
                         let _ = crate::config::persist(&state.cfg);
                     }
-                }
             });
         });
     }
