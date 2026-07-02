@@ -22,6 +22,17 @@
   <developer_name>LangYa466</developer_name>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.0" date="2026-07-02">
+      <description>
+        <p>Bundle the mihomo core with the .deb and tarball; add manual core updates.</p>
+        <ul>
+          <li>Ship mihomo in the release artifacts under /usr/lib/clash-gnome/mihomo</li>
+          <li>Settings: check for and install mihomo updates in place</li>
+          <li>Dashboard banner offers a one-click install when no core is found</li>
+          <li>Configurable GitHub proxy for users behind restricted networks</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-07-02">
       <description><p>Initial release.</p></description>
     </release>

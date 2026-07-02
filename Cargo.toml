@@ -1,6 +1,6 @@
 [package]
 name = "clash-gnome"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["LangYa466 <langya466@gmail.com>"]
 description = "A modern GTK4/libadwaita GUI frontend for mihomo (Clash Meta)"
