@@ -29,6 +29,7 @@ eventsource-stream = "0.2"
 log = "0.4"
 env_logger = "0.11"
 ksni = "0.2"
+flate2 = "1"
 
 [profile.release]
 lto = "thin"
@@ -48,9 +49,9 @@ connections, subscription management, TUN mode, and system tray."""
 section = "net"
 priority = "optional"
 depends = "libgtk-4-1 (>= 4.10), libadwaita-1-0 (>= 1.5), libdbus-1-3, libc6"
-recommends = "mihomo"
 assets = [
     ["target/release/clash-gnome", "usr/bin/", "755"],
+    ["bundle/mihomo", "usr/lib/clash-gnome/mihomo", "755"],
     ["data/io.langya.ClashGNOME.desktop", "usr/share/applications/", "644"],
     ["data/io.langya.ClashGNOME.metainfo.xml", "usr/share/metainfo/", "644"],
     ["LICENSE", "usr/share/doc/clash-gnome/", "644"],

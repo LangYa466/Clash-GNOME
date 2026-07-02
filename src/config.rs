@@ -132,6 +132,8 @@ pub struct AppConfig {
     pub log_max_size_mb: u32,
     #[serde(default = "default_log_max_days")]
     pub log_max_days: u32,
+    #[serde(default)]
+    pub github_proxy: String,
 }
 
 fn default_log_max_size() -> u32 { 20 }
@@ -142,13 +144,32 @@ pub fn default_user_agent() -> String {
 }
 
 fn default_mihomo_path() -> String {
-    // Prefer PATH-resolved binary
-    for candidate in ["/usr/bin/mihomo", "/usr/local/bin/mihomo", "/opt/mihomo/mihomo"] {
+    // User-managed install first (writable, updatable via the app), then bundled
+    // locations shipped by the .deb / tarball, then system PATH.
+    let user = mihomo_managed_path();
+    if user.exists() {
+        return user.to_string_lossy().into_owned();
+    }
+    for candidate in [
+        "/usr/lib/clash-gnome/mihomo",
+        "/usr/bin/mihomo",
+        "/usr/local/bin/mihomo",
+        "/opt/mihomo/mihomo",
+    ] {
         if std::path::Path::new(candidate).exists() {
             return candidate.to_string();
         }
     }
     "mihomo".to_string()
+}
+
+/// Location where clash-gnome installs and updates mihomo when the user
+/// clicks "Install" / "Update" in Settings. Always writable.
+pub fn mihomo_managed_path() -> PathBuf {
+    let mut p = data_dir();
+    p.push("bin");
+    p.push("mihomo");
+    p
 }
 fn default_api_port() -> u16 { 9090 }
 fn default_api_host() -> String { "127.0.0.1".to_string() }
@@ -206,6 +227,7 @@ impl Default for AppConfig {
             ipv6: true,
             log_max_size_mb: default_log_max_size(),
             log_max_days: default_log_max_days(),
+            github_proxy: String::new(),
         }
     }
 }

@@ -4,6 +4,7 @@ mod autostart;
 mod config;
 mod core_manager;
 mod mihomo_config;
+mod mihomo_download;
 mod pages;
 mod subscription;
 mod tray;

@@ -139,6 +139,71 @@ impl CoreManager {
         self.start().await
     }
 
+    /// Update the mihomo binary. If the core is running, uses mihomo's own
+    /// `POST /upgrade` and waits for the `<workdir>/meta-update` folder to
+    /// disappear (signal that self-update finished). If the core is not
+    /// running, downloads the latest release via `mihomo_download` and
+    /// overwrites the managed binary at `mihomo_managed_path()`.
+    ///
+    /// Returns the installed version string on success.
+    pub async fn upgrade_core(self: &Arc<Self>) -> Result<String> {
+        let running = *self.state.lock().await == CoreState::Running;
+        let github_proxy = self.cfg.read().unwrap().github_proxy.clone();
+
+        if running {
+            self.api().upgrade_core().await.context("POST /upgrade")?;
+
+            // Watch for mihomo to finish self-update.
+            let marker = config::mihomo_work_dir().join("meta-update");
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+            let mut saw = false;
+            loop {
+                let exists = marker.exists();
+                if exists {
+                    saw = true;
+                }
+                if saw && !exists {
+                    break;
+                }
+                if std::time::Instant::now() > deadline {
+                    if !saw {
+                        // meta-update never appeared: mihomo probably already restarted.
+                        break;
+                    }
+                    return Err(anyhow!("mihomo self-update timed out (meta-update not removed)"));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+
+            // mihomo self-update exec-replaces the process; wait for API to come back.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            let api = self.api();
+            loop {
+                if let Ok(v) = api.version().await {
+                    *self.state.lock().await = CoreState::Running;
+                    return Ok(format!("v{}", v.version));
+                }
+                if std::time::Instant::now() > deadline {
+                    *self.state.lock().await = CoreState::Failed;
+                    return Err(anyhow!("mihomo did not respond after self-update"));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            }
+        }
+
+        // Not running — download to the managed path and point config at it.
+        let version = crate::mihomo_download::latest_version(&github_proxy).await
+            .context("fetch latest mihomo version")?;
+        let dest = crate::mihomo_download::install(&version, &github_proxy).await
+            .context("install mihomo")?;
+        {
+            let mut cfg = self.cfg.write().unwrap();
+            cfg.mihomo_path = dest.to_string_lossy().into_owned();
+        }
+        let _ = config::persist(&self.cfg);
+        Ok(version)
+    }
+
     /// Re-generate config.yaml from current AppConfig and ask mihomo to reload it in place.
     /// If the core is not running, just regenerates the file.
     pub async fn apply_config(&self) -> Result<()> {

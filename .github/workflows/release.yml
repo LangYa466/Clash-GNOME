@@ -53,6 +53,24 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
+      - name: Fetch bundled mihomo core
+        run: |
+          set -euo pipefail
+          case "${{ matrix.arch }}" in
+            x86_64)  MI_ARCH="mihomo-linux-amd64-compatible" ;;
+            aarch64) MI_ARCH="mihomo-linux-arm64" ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          MI_VER=$(curl -fsSL https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt | tr -d '[:space:]')
+          echo "Bundling mihomo ${MI_VER} (${MI_ARCH})"
+          curl -fsSL -o mihomo.gz \
+            "https://github.com/MetaCubeX/mihomo/releases/download/${MI_VER}/${MI_ARCH}-${MI_VER}.gz"
+          gunzip -f mihomo.gz
+          chmod +x mihomo
+          mkdir -p bundle
+          mv mihomo bundle/mihomo
+          ls -lh bundle/mihomo
+
       - name: Install cargo-deb
         run: cargo install cargo-deb --locked
 
@@ -77,6 +95,7 @@ jobs:
           STAGE=stage/clash-gnome-${{ steps.version.outputs.version }}-${{ matrix.arch }}-linux
           mkdir -p "${STAGE}"
           cp target/${{ matrix.target }}/release/clash-gnome "${STAGE}/"
+          cp bundle/mihomo "${STAGE}/mihomo"
           cp README.md LICENSE "${STAGE}/"
           mkdir -p "${STAGE}/data"
           cp data/*.desktop data/*.metainfo.xml data/style.css "${STAGE}/data/"
@@ -85,9 +104,11 @@ jobs:
           set -euo pipefail
           PREFIX="${PREFIX:-/usr/local}"
           install -Dm755 clash-gnome "${PREFIX}/bin/clash-gnome"
+          install -Dm755 mihomo "${PREFIX}/lib/clash-gnome/mihomo"
           install -Dm644 data/io.langya.ClashGNOME.desktop "${PREFIX}/share/applications/io.langya.ClashGNOME.desktop"
           install -Dm644 data/io.langya.ClashGNOME.metainfo.xml "${PREFIX}/share/metainfo/io.langya.ClashGNOME.metainfo.xml"
           echo "Installed clash-gnome to ${PREFIX}/bin/clash-gnome"
+          echo "Installed bundled mihomo to ${PREFIX}/lib/clash-gnome/mihomo"
           SH
           chmod +x "${STAGE}/install.sh"
           cd stage

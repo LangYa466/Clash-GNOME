@@ -34,6 +34,53 @@ fn content(state: Arc<AppState>) -> gtk::Box {
     title.set_xalign(0.0);
     vbox.append(&title);
 
+    let missing_banner = adw::Banner::new("mihomo core is not installed");
+    missing_banner.set_button_label(Some("Install"));
+    missing_banner.set_revealed(false);
+    vbox.append(&missing_banner);
+    {
+        let state_c = state.clone();
+        let banner_c = missing_banner.clone();
+        missing_banner.connect_button_clicked(move |b| {
+            b.set_sensitive(false);
+            let core = state_c.core.clone();
+            let banner = banner_c.clone();
+            let btn_root = b.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+            let b_c = b.clone();
+            util::spawn(
+                async move { core.upgrade_core().await },
+                move |res| {
+                    b_c.set_sensitive(true);
+                    match res {
+                        Ok(_) => banner.set_revealed(false),
+                        Err(e) => {
+                            let dlg = adw::AlertDialog::builder()
+                                .heading("mihomo install failed")
+                                .body(e.to_string())
+                                .build();
+                            dlg.add_response("ok", "OK");
+                            dlg.present(btn_root.as_ref());
+                        }
+                    }
+                },
+            );
+        });
+    }
+    // Poll binary presence periodically (cheap: single fs metadata call).
+    {
+        let state_c = state.clone();
+        let banner_c = missing_banner.clone();
+        glib::timeout_add_seconds_local(3, move || {
+            let path = state_c.cfg.read().unwrap().mihomo_path.clone();
+            let exists = mihomo_binary_available(&path);
+            banner_c.set_revealed(!exists);
+            glib::ControlFlow::Continue
+        });
+        // Kick immediately so first render is right.
+        let path = state.cfg.read().unwrap().mihomo_path.clone();
+        missing_banner.set_revealed(!mihomo_binary_available(&path));
+    }
+
     // Stat cards row
     let cards = gtk::FlowBox::builder()
         .homogeneous(true)
@@ -396,6 +443,25 @@ fn mode_pill(title: &str, initial: &str, icon: &str) -> ModePill {
     card.append(&img);
     card.append(&vbox);
     ModePill { root: card.upcast(), value }
+}
+
+fn mihomo_binary_available(path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    let p = std::path::Path::new(path);
+    if p.is_absolute() || path.contains('/') {
+        return p.is_file();
+    }
+    // Bare name: probe PATH.
+    if let Ok(env_path) = std::env::var("PATH") {
+        for dir in env_path.split(':').filter(|s| !s.is_empty()) {
+            if std::path::Path::new(dir).join(path).is_file() {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn title_case(s: &str) -> String {

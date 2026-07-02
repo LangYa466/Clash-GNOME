@@ -305,6 +305,31 @@ impl Api {
         Ok(())
     }
 
+    /// POST /upgrade — ask the running mihomo to self-update. The core downloads
+    /// a new binary into `<work-dir>/meta-update/` and exec-replaces itself.
+    /// Connection typically drops mid-response; treat "connection reset" as success.
+    pub async fn upgrade_core(&self) -> Result<()> {
+        let r = self.req(reqwest::Method::POST, "/upgrade")
+            .timeout(std::time::Duration::from_secs(90))
+            .send()
+            .await;
+        match r {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!("/upgrade returned HTTP {status}"))
+                }
+            }
+            Err(e) if e.is_connect() || e.is_request() || e.is_body() || e.is_decode() => {
+                // mihomo often kills the connection as it exec-replaces itself.
+                Ok(())
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// Stream traffic events (server sends one JSON per line via chunked encoding).
     /// Returns a cancel sender: drop or send () to stop the streaming task.
     pub fn stream_traffic(self: &Arc<Self>) -> (mpsc::UnboundedReceiver<TrafficEvent>, mpsc::Sender<()>) {

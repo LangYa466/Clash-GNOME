@@ -147,6 +147,128 @@ pub fn build(state: Arc<AppState>) -> gtk::Widget {
     }
     core_g.add(&setcap_row);
 
+    let proxy_row = adw::ComboRow::new();
+    proxy_row.set_title("GitHub proxy");
+    proxy_row.set_subtitle("Used when downloading mihomo. \"Auto\" tries mirrors then direct.");
+    let proxy_options: &[(&str, &str)] = &[
+        ("", "Direct"),
+        ("auto", "Auto"),
+        ("https://gh-proxy.org", "gh-proxy.org"),
+        ("https://ghfast.top", "ghfast.top"),
+        ("https://down.clashparty.org", "down.clashparty.org"),
+        ("https://download.mihomo.party", "download.mihomo.party"),
+    ];
+    let proxy_model = gtk::StringList::new(
+        &proxy_options.iter().map(|(_, l)| *l).collect::<Vec<_>>(),
+    );
+    proxy_row.set_model(Some(&proxy_model));
+    let current_proxy = state.cfg.read().unwrap().github_proxy.clone();
+    let cur_idx = proxy_options
+        .iter()
+        .position(|(v, _)| *v == current_proxy)
+        .unwrap_or(0) as u32;
+    proxy_row.set_selected(cur_idx);
+    {
+        let state = state.clone();
+        let proxy_options = proxy_options.to_vec();
+        proxy_row.connect_selected_notify(move |row| {
+            let idx = row.selected() as usize;
+            if let Some((v, _)) = proxy_options.get(idx) {
+                state.cfg.write().unwrap().github_proxy = (*v).to_string();
+                let _ = crate::config::persist(&state.cfg);
+            }
+        });
+    }
+    core_g.add(&proxy_row);
+
+    let update_row = adw::ActionRow::new();
+    update_row.set_title("mihomo core");
+    update_row.set_subtitle("Checking…");
+    let update_btn = gtk::Button::with_label("Check for updates");
+    update_btn.set_valign(gtk::Align::Center);
+    update_btn.add_css_class("pill");
+    let update_spinner = gtk::Spinner::new();
+    update_spinner.set_valign(gtk::Align::Center);
+    update_spinner.set_visible(false);
+    update_row.add_suffix(&update_spinner);
+    update_row.add_suffix(&update_btn);
+    core_g.add(&update_row);
+
+    let refresh_status = {
+        let state = state.clone();
+        let update_row = update_row.clone();
+        let update_btn = update_btn.clone();
+        std::rc::Rc::new(move || {
+            let binary = state.cfg.read().unwrap().mihomo_path.clone();
+            let github_proxy = state.cfg.read().unwrap().github_proxy.clone();
+            let row = update_row.clone();
+            let btn = update_btn.clone();
+            util::spawn(
+                async move {
+                    let installed = crate::mihomo_download::installed_version(&binary).await;
+                    let latest = crate::mihomo_download::latest_version(&github_proxy).await.ok();
+                    (installed, latest)
+                },
+                move |(installed, latest)| {
+                    let installed_txt = installed.clone().unwrap_or_else(|| "not installed".into());
+                    let latest_txt = latest.clone().unwrap_or_else(|| "unknown".into());
+                    row.set_subtitle(&format!("Installed: {installed_txt}  ·  Latest: {latest_txt}"));
+                    match (installed.as_deref(), latest.as_deref()) {
+                        (None, Some(_)) => btn.set_label("Install"),
+                        (Some(a), Some(b)) if a != b => btn.set_label(&format!("Update to {b}")),
+                        (Some(_), Some(_)) => btn.set_label("Up to date"),
+                        _ => btn.set_label("Check for updates"),
+                    }
+                    btn.set_sensitive(true);
+                },
+            );
+        })
+    };
+    refresh_status();
+
+    {
+        let state = state.clone();
+        let update_row_c = update_row.clone();
+        let update_spinner_c = update_spinner.clone();
+        let refresh_status = refresh_status.clone();
+        update_btn.connect_clicked(move |btn| {
+            btn.set_sensitive(false);
+            update_spinner_c.set_visible(true);
+            update_spinner_c.start();
+            let core = state.core.clone();
+            let win = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+            let update_row_i = update_row_c.clone();
+            let update_spinner_i = update_spinner_c.clone();
+            let refresh_status = refresh_status.clone();
+            util::spawn(
+                async move { core.upgrade_core().await },
+                move |res| {
+                    update_spinner_i.stop();
+                    update_spinner_i.set_visible(false);
+                    match res {
+                        Ok(v) => {
+                            let msg = if v.is_empty() {
+                                "mihomo has been updated.".to_string()
+                            } else {
+                                format!("mihomo {v} is now installed.")
+                            };
+                            update_row_i.set_subtitle(&msg);
+                        }
+                        Err(e) => {
+                            let dlg = adw::AlertDialog::builder()
+                                .heading("mihomo update failed")
+                                .body(e.to_string())
+                                .build();
+                            dlg.add_response("ok", "OK");
+                            dlg.present(win.as_ref());
+                        }
+                    }
+                    refresh_status();
+                },
+            );
+        });
+    }
+
     page.add(&core_g);
 
     // === Ports ===
